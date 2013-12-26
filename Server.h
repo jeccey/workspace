@@ -3,11 +3,6 @@
 
 /**
  *
- *
- * TCP client-server wrapper; handy when you need to do some
- * basic TCP communication. But this can easily be used to handle
- * hundreds of simultanious connections.
- *
  * Though be aware; if you need zero copy buffer handling you need 
  * to change the way we handle the buffers.
  *
@@ -15,11 +10,16 @@
 
 extern "C" {
 	#include <sys/socket.h>
+	#include <netinet/in.h>
+	#include <arpa/inet.h>
 	#include <event2/bufferevent.h>
 	#include <event2/buffer.h>
 	#include <event2/listener.h>
 	#include <event2/util.h>
 	#include <event2/event.h>
+	#include <string.h>
+	#include <signal.h>
+	#include <errno.h>
 }
 
 #include "Connection.h"
@@ -34,26 +34,29 @@ public:
 	~Server();
 	
 	bool setup(const unsigned short& port);
+	void start();
 	void update();
 	void sendToAllClients(const char* data, size_t len);
 	void addConnection(evutil_socket_t fd, T* connection);
 	void removeConnection(evutil_socket_t fd);
 		
-	static void listenerCallback(struct evconnlistener* listener
+	static void listenerCallback(
+		 struct evconnlistener* listener
 		,evutil_socket_t socket
 		,struct sockaddr* saddr
 		,int socklen
 		,void* server
-	);	
+	);
+	
 	static void signalCallback(evutil_socket_t sig, short events, void* server);
 	static void writeCallback(struct bufferevent*, void* server);
 	static void readCallback(struct bufferevent*, void* connection);
 	static void eventCallback(struct bufferevent*, short, void* server);
-
+private:
 	struct sockaddr_in sin;
 	struct event_base* base;
 	struct event* signal_event;
-	struct evconnlistener* listener;		//evconnlistener结构，提供了监听和接受TCP连接的方法
+	struct evconnlistener* listener;
 		
 	map<evutil_socket_t, T*> connections;
 };
@@ -94,9 +97,8 @@ bool Server<T>::setup(const unsigned short& port) {
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons(port);
-	//IP ????
-	//sin.sin_addr.s_addr = htonl("192.168.80.125");
-	
+	//ip??
+	sin.sin_addr.s_addr = inet_addr("192.168.80.125");
 	listener = evconnlistener_new_bind(
 		 base
 		,Server::listenerCallback
@@ -121,6 +123,12 @@ bool Server<T>::setup(const unsigned short& port) {
 	return true;
 }
 
+template<class T>
+void Server<T>::start() {
+	if(base != NULL) {
+		event_base_dispatch(base);
+	}
+}
 
 template<class T>
 void Server<T>::update() {
@@ -162,7 +170,7 @@ void Server<T>::listenerCallback(
 	Server<T>* server = static_cast<Server<T>* >(data);
 	struct event_base* base = (struct event_base*) server->base;
 	struct bufferevent* bev;
-	
+
 	//bufferevent_socket_new创建基于套接字的bufferevent
 	bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
 	if(!bev) {
@@ -174,7 +182,8 @@ void Server<T>::listenerCallback(
 	T* conn = new T(fd, bev, (void*)server);
 	server->addConnection(fd, conn);
 
-	bufferevent_setcb(bev, Server::readCallback, Server::writeCallback, Server::eventCallback, (void*)conn);
+	bufferevent_setcb(bev, Server::readCallback, Server::writeCallback, 
+				Server::eventCallback, (void*)conn);
 	bufferevent_enable(bev, EV_WRITE);
 	bufferevent_enable(bev, EV_READ); 
 }
@@ -190,22 +199,29 @@ void Server<T>::signalCallback(evutil_socket_t sig, short events, void* data) {
 
 template<class T>
 void Server<T>::writeCallback(struct bufferevent* bev, void* data) {
-	struct evbuffer* output = bufferevent_get_output(bev);
-	if(evbuffer_get_length(output) == 0) {
+	struct evbuffer* outputbuf = bufferevent_get_output(bev);
+	if(evbuffer_get_length(outputbuf) == 0) {
 
 	}
+	
 	printf("write callback.\n");
 }
 
 template<class T>
 void Server<T>::readCallback(struct bufferevent* bev, void* connection) {
 	T* conn = static_cast<T*>(connection);
-	struct evbuffer* buf = bufferevent_get_input(bev);
+	struct evbuffer* inputbuf = bufferevent_get_input(bev);
 	char readbuf[1024];
-	size_t read = 0;
-	
-	while( (read = evbuffer_remove(buf, &readbuf, sizeof(readbuf))) > 0) {
-		conn->onRead(readbuf, read);
+	size_t readn = 0;
+
+	evutil_socket_t fd = bufferevent_getfd(bev);
+	//copy all the data from input buffer to the out buffer
+	//struct evbuffer* outputbuf = bufferevent_get_output(bev);
+	//evbuffer_add_buffer(outputbuf, inputbuf);
+	while( (readn = evbuffer_remove(inputbuf, &readbuf, sizeof(readbuf))) > 0) {
+		conn->onRead(readbuf, readn);
+		readbuf[readn] = '\0';
+		printf("fd=%u, recv data: %s\n", fd, readbuf);
 	}
 }
 
@@ -213,10 +229,11 @@ template<class T>
 void Server<T>::eventCallback(struct bufferevent* bev, short events, void* data) {
 	T* conn = static_cast<T*>(data);
 	Server<T>* server = static_cast<Server<T>* >(conn->server);
-
+	
 	if(events & BEV_EVENT_EOF) {
 		server->removeConnection(conn->fd);
 		bufferevent_free(bev);
+		printf("ref: %p, Connection closed.\n", server);
 	}
 	else if(events & BEV_EVENT_ERROR) {
 		printf("Got an error on the connection: %s\n", strerror(errno));

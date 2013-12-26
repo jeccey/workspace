@@ -10,12 +10,12 @@ extern "C" {
 
 class Connection {
 public:
+	Connection(evutil_socket_t fd, struct bufferevent* bev, void* server);
+	void send(const char* data, size_t numBytes);
+	
 	struct bufferevent* bev;
 	evutil_socket_t fd;
 	void* server;
-
-	Connection(evutil_socket_t fd, struct bufferevent* bev, void* server);
-	void send(const char* data, size_t numBytes);
 };
 
 
