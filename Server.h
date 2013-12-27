@@ -3,7 +3,7 @@
 
 /**
  *
- * Though be aware; if you need zero copy buffer handling you need 
+ * Though be aware; if you need zero copy buffer handling you need
  * to change the way we handle the buffers.
  *
  */
@@ -32,14 +32,14 @@ public:
 
 	Server();
 	~Server();
-	
+
 	bool setup(const unsigned short& port);
 	void start();
 	void update();
 	void sendToAllClients(const char* data, size_t len);
 	void addConnection(evutil_socket_t fd, T* connection);
 	void removeConnection(evutil_socket_t fd);
-		
+
 	static void listenerCallback(
 		 struct evconnlistener* listener
 		,evutil_socket_t socket
@@ -47,7 +47,7 @@ public:
 		,int socklen
 		,void* server
 	);
-	
+
 	static void signalCallback(evutil_socket_t sig, short events, void* server);
 	static void writeCallback(struct bufferevent*, void* server);
 	static void readCallback(struct bufferevent*, void* connection);
@@ -57,11 +57,11 @@ private:
 	struct event_base* base;
 	struct event* signal_event;
 	struct evconnlistener* listener;
-		
+
 	map<evutil_socket_t, T*> connections;
 };
 
-template<class T> 
+template<class T>
 Server<T>::Server()
 	:base(NULL)
 	,listener(NULL)
@@ -70,16 +70,16 @@ Server<T>::Server()
 }
 
 
-template<class T> 
+template<class T>
 Server<T>::~Server() {
 	if(signal_event != NULL) {
 		event_free(signal_event);
 	}
-	
+
 	if(listener != NULL) {
 		evconnlistener_free(listener);
 	}
-	
+
 	if(base != NULL) {
 		event_base_free(base);
 	}
@@ -93,7 +93,7 @@ bool Server<T>::setup(const unsigned short& port) {
 		printf("Server: cannot create base.\n");
 		return false;
 	}
-	
+
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons(port);
@@ -108,15 +108,15 @@ bool Server<T>::setup(const unsigned short& port) {
 		,(struct sockaddr*)&sin
 		,sizeof(sin)
 	);
-	
+
 	if(!listener) {
 		printf("Cannot create listener.\n");
 		return false;
 	}
-	
+
 	signal_event = evsignal_new(base, SIGINT, signalCallback, (void*)this);
 	if(!signal_event || event_add(signal_event, NULL) < 0) {
-		
+
 		printf("Cannog create signal event.\n");
 		return false;
 	}
@@ -178,17 +178,17 @@ void Server<T>::listenerCallback(
 		printf("Error constructing bufferevent!\n");
 		return;
 	}
-	
+
 	T* conn = new T(fd, bev, (void*)server);
 	server->addConnection(fd, conn);
 
-	bufferevent_setcb(bev, Server::readCallback, Server::writeCallback, 
+	bufferevent_setcb(bev, Server::readCallback, Server::writeCallback,
 				Server::eventCallback, (void*)conn);
 	bufferevent_enable(bev, EV_WRITE);
-	bufferevent_enable(bev, EV_READ); 
+	bufferevent_enable(bev, EV_READ);
 }
-	
-template<class T>	
+
+template<class T>
 void Server<T>::signalCallback(evutil_socket_t sig, short events, void* data) {
 	Server<T>* server = static_cast<Server<T> *>(data);
 	struct event_base* base = server->base;
@@ -200,10 +200,7 @@ void Server<T>::signalCallback(evutil_socket_t sig, short events, void* data) {
 template<class T>
 void Server<T>::writeCallback(struct bufferevent* bev, void* data) {
 	struct evbuffer* outputbuf = bufferevent_get_output(bev);
-	if(evbuffer_get_length(outputbuf) == 0) {
 
-	}
-	
 	printf("write callback.\n");
 }
 
@@ -229,7 +226,7 @@ template<class T>
 void Server<T>::eventCallback(struct bufferevent* bev, short events, void* data) {
 	T* conn = static_cast<T*>(data);
 	Server<T>* server = static_cast<Server<T>* >(conn->server);
-	
+
 	if(events & BEV_EVENT_EOF) {
 		server->removeConnection(conn->fd);
 		bufferevent_free(bev);

@@ -5,14 +5,14 @@ extern "C" {
 	#include <event2/event.h>
 	#include <event2/buffer.h>
 	#include <event2/bufferevent.h>
-} 
+}
 #include <string>
 
 class Connection {
 public:
 	Connection(evutil_socket_t fd, struct bufferevent* bev, void* server);
 	void send(const char* data, size_t numBytes);
-	
+
 	struct bufferevent* bev;
 	evutil_socket_t fd;
 	void* server;
